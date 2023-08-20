@@ -1,0 +1,52 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: cert-manager
+  chart:
+    spec:
+      chart: cert-manager
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      version: 1.2.0
+  values:
+    global:
+      leaderElection:
+        # Override the namespace used to store the ConfigMap for leader election
+        namespace: "cert-manager"
+
+    installCRDs: false
+
+    replicaCount: 2
+
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+
+    # Optional additional arguments
+    extraArgs:
+      # Use this flag to set a namespace that cert-manager will use to store
+      # supporting resources required for each ClusterIssuer (default is kube-system)
+      - --cluster-resource-namespace=cert-manager
+      # When this flag is enabled, secrets will be automatically removed when the certificate resource is deleted
+      # - --enable-certificate-owner-ref=true
+
+    podDnsConfig:
+      nameservers:
+        - "8.8.8.8"
+        - "8.8.4.4"
+
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: true

@@ -1,0 +1,212 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring-system
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: kube-prometheus-stack
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus
+        namespace: flux-system
+      version: 15.2.1
+  values:
+    ## For kube-proxy to work:
+    ## Add `--metrics-bind-address=0.0.0.0` in kube-proxy daemon-set (kube-system) `kctl -n kube-system edit daemonsets. kube-proxy`
+
+    ## The following are not usually available in Cloud Providers or RKE
+    kubeControllerManager:
+      enabled: false
+
+    kubeScheduler:
+      enabled: true
+
+    kubeEtcd:
+      enabled: true
+
+    ## Create default rules for monitoring the cluster
+    ##
+    defaultRules:
+      create: true
+      rules:
+        etcd: false
+        kubeScheduler: false
+
+    ## Provide custom recording or alerting rules to be deployed into the cluster.
+    ##
+    additionalPrometheusRules: []
+    #  - name: my-rule-file
+    #    groups:
+    #      - name: my_group
+    #        rules:
+    #        - record: my_record
+    #          expr: 100 * my_record
+
+    ## Configuration for alertmanager
+    ## ref: https://prometheus.io/docs/alerting/alertmanager/
+    ##
+    alertmanager:
+      ## Configure pod disruption budgets for Alertmanager
+      ## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb/#specifying-a-poddisruptionbudget
+      ## This configuration is immutable once created and will require the PDB to be deleted to be changed
+      ## https://github.com/kubernetes/kubernetes/issues/45398
+      ##
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+        maxUnavailable: ""
+
+      ## Alertmanager configuration directives
+      ## ref: https://prometheus.io/docs/alerting/configuration/#configuration-file
+      ##      https://prometheus.io/webtools/alerting/routing-tree-editor/
+      ##
+      config:
+        global:
+          resolve_timeout: 5m
+          opsgenie_api_url: https://api.eu.opsgenie.com/
+          opsgenie_api_key: XXXXXXX
+
+        receivers:
+          - name: "opsgenie"
+            opsgenie_configs:
+              - api_key: XXXXXXXX
+                api_url: https://api.eu.opsgenie.com/
+
+        route:
+          group_by: ["job", "alertname", "priority"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+
+          receiver: "opsgenie"
+
+          routes:
+            - match:
+                alertname: Watchdog
+              receiver: "opsgenie"
+
+            - match:
+                alertname: KubePodNotReady
+              receiver: "opsgenie"
+
+            - match:
+                alertname: KubePodCrashLooping
+              receiver: "opsgenie"
+
+            - match:
+                alertname: KubeMemOvercommit
+              receiver: "opsgenie"
+
+            - match:
+                alertname: CPUThrottlingHigh
+              receiver: "opsgenie"
+
+            - match:
+                alertname: NodeDiskRunningFull
+              receiver: "opsgenie"
+
+      ingress:
+        enabled: false
+
+      ## Settings affecting alertmanagerSpec
+      ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#alertmanagerspec
+      ##
+      alertmanagerSpec:
+        ## Define Log Format
+        # Use logfmt (default) or json-formatted logging
+        logFormat: logfmt
+
+        ## Log level for Alertmanager to be configured with.
+        ##
+        logLevel: info
+
+        ## Size is the expected size of the alertmanager cluster. The controller will eventually make the size of the
+        ## running cluster equal to the expected size.
+        replicas: 1
+
+        ##      The external URL the Alertmanager instances will be available under. This is necessary to generate correct URLs. This is necessary if Alertmanager is not served from root of a DNS name.       string  false
+        ##
+        externalUrl:
+
+    ## Using default values from https://github.com/helm/charts/blob/master/stable/grafana/values.yaml
+    ##
+    grafana:
+      ingress:
+        enabled: true
+        annotations:
+          kubernetes.io/ingress.class: "nginx"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+        hosts:
+          - grafana.test.com
+        paths:
+          - /
+        tls:
+          - secretName: grafana-general-tls
+            hosts:
+              - grafana.test.com
+
+      sidecar:
+        dashboards:
+          searchNamespace: ALL
+        datasources:
+          searchNamespace: ALL
+
+      grafana.ini:
+        users:
+          viewers_can_edit: false
+        auth:
+          disable_login_form: true
+          disable_signout_menu: true
+        auth.anonymous:
+          enabled: true
+          org_role: Viewer
+
+    ## Deploy a Prometheus instance
+    ##
+    prometheus:
+      ingress:
+        enabled: false
+
+      ## Settings affecting prometheusSpec
+      ## ref: https://github.com/coreos/prometheus-operator/blob/master/Documentation/api.md#prometheusspec
+      ##
+      prometheusSpec:
+        ruleSelectorNilUsesHelmValues: false
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+
+        retention: 10d
+        retentionSize: 10GiB
+        walCompression: true
+
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 30Gi
+
+        ## Number of Prometheus replicas desired
+        ##
+        replicas: 1
+
+        ## Log level for Prometheus be configured in
+        ##
+        logLevel: info
+
+        ## Log format for Prometheus be configured in
+        ##
+        logFormat: logfmt
+
+    prometheusOperator:
+      admissionWebhooks:
+        enabled: false

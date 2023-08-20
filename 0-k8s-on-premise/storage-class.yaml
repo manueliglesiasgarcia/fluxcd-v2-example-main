@@ -1,0 +1,15 @@
+---
+# In order for this to work we need to follow this:
+# https://rancher.com/docs/rke/latest/en/config-options/cloud-providers/vsphere/
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: vsphere-thin
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: kubernetes.io/vsphere-volume
+parameters:
+  datastore: Datastore
+  diskformat: thin
+  fstype: ext4
+allowVolumeExpansion: true

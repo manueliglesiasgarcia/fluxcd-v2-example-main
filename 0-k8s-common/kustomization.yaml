@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - prometheus-operator.yaml
+  - cost-analyzer.yaml
+  - ingress-nginx.yaml
+  - elasticsearch-operator.yaml
+  - elasticsearch-crds.yaml
+  - logging-eck-es-curator.yaml
+  - logging-eck.yaml
+  - logging-filebeat.yaml
+  - logging-logstash.yaml
+  - grafana-dashboards.yaml
+  - zalando-postgres-operator.yaml

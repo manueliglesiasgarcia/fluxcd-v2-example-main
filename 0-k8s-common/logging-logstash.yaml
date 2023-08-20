@@ -1,0 +1,84 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: logstash
+  namespace: logging-system
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: logstash
+  chart:
+    spec:
+      chart: logstash
+      sourceRef:
+        kind: HelmRepository
+        name: elastic
+        namespace: flux-system
+      version: 7.12.0
+  values:
+    replicas: 2
+
+    # Allows you to add any config files in /usr/share/logstash/config/
+    # such as logstash.yml and log4j2.properties
+    #
+    # Note that when overriding logstash.yml, `http.host: 0.0.0.0` should always be included
+    # to make default probes work.
+    ## See: https://www.elastic.co/guide/en/logstash/current/logstash-settings-file.html
+    logstashConfig:
+      # log4j2.properties: |
+      #  key = value
+      logstash.yml: |
+        http.host: "0.0.0.0"
+        xpack.monitoring.elasticsearch.hosts: "http://eck-stack-elasticsearch-es-http:9200"
+
+    # Allows you to add any pipeline files in /usr/share/logstash/pipeline/
+    ### ***warn*** there is a hardcoded logstash.conf in the image, override it first
+    logstashPipeline:
+      logstash.conf: |
+        input {
+          beats {
+            port => 5044
+          }
+        }
+
+        filter {
+          json {
+            skip_on_invalid_json => true
+            source => "message"
+            target => "message_parsed"
+          }
+        }
+
+        output {
+          elasticsearch {
+            hosts => [ "${ELASTICSEARCH_HOST:http://eck-stack-elasticsearch-es-http:9200}" ]
+            ilm_enabled => true
+            ilm_policy => "logs"
+          }
+        }
+
+    logstashJavaOpts: "-Xmx1g -Xms1g"
+
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "1536Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1536Mi"
+
+    rbac:
+      create: true
+
+    podSecurityPolicy:
+      create: true
+
+    service:
+      type: ClusterIP
+      ports:
+        - name: beats
+          port: 5044
+          protocol: TCP
+          targetPort: 5044

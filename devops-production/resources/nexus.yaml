@@ -1,0 +1,61 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: nexus-repository-manager
+  namespace: nexus
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: nexus-repository-manager
+  chart:
+    spec:
+      chart: nexus-repository-manager
+      sourceRef:
+        kind: HelmRepository
+        name: sonatype
+        namespace: flux-system
+      version: 30.1.0
+  # https://github.com/sonatype/helm3-charts/blob/master/nexus-repository-manager/values.yaml
+  values:
+    nexus:
+      dockerSupport:
+        enabled: false
+      env:
+        # https://stackoverflow.com/questions/56946027/nexus-sonatype-nexus33-17-0-on-docker-tells-its-using-only-one-cpu
+        - name: install4jAddVmParams
+          value: "-Xms1200M -Xmx1200M -XX:ActiveProcessorCount=4 -XX:MaxDirectMemorySize=2G -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap"
+        - name: NEXUS_SECURITY_RANDOMPASSWORD
+          value: "true"
+      resources:
+        requests:
+          ## Based on https://support.sonatype.com/hc/en-us/articles/115006448847#mem
+          ## and https://twitter.com/analytically/status/894592422382063616:
+          ##   Xms == Xmx
+          ##   Xmx <= 4G
+          ##   MaxDirectMemory >= 2G
+          ##   Xmx + MaxDirectMemory <= RAM * 2/3 (hence the request for 4800Mi)
+          ##   MaxRAMFraction=1 is not being set as it would allow the heap
+          ##     to use all the available memory.
+          cpu: 250m
+          memory: 4800Mi
+
+    ingress:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/proxy-body-size: "400m"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      hostPath: /
+      hostRepo: nexus.test.com
+      tls:
+        - secretName: nexus-general-tls
+          hosts:
+            - nexus.test.com
+
+    persistence:
+      enabled: true
+      accessMode: ReadWriteOnce
+      storageSize: 200Gi

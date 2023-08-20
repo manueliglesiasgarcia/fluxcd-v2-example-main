@@ -1,0 +1,103 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zalando-postgres-pod-config
+  namespace: operators-system
+data:
+  ALLOW_NOSSL: "true"
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres-operator-cluster-metrics
+  namespace: operators-system
+  labels:
+    application: spilo
+spec:
+  interval: 5m
+  selector:
+    matchLabels:
+      application: spilo
+  namespaceSelector:
+    any: true
+  podMetricsEndpoints:
+    - path: /metrics
+      port: exporter
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: postgres-operator
+  namespace: operators-system
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: postgres-operator
+  chart:
+    spec:
+      chart: postgres-operator
+      version: 1.6.1
+      sourceRef:
+        kind: HelmRepository
+        name: zalando
+        namespace: flux-system
+  values:
+    image:
+      # https://github.com/zalando/postgres-operator/issues/1383
+      tag: v1.6.1-2-gca968ca1
+    configKubernetes:
+      cluster_name_label: devops-production
+      # annotations attached to each database pod
+      # custom_pod_annotations: "keya:valuea,keyb:valueb"
+      enable_pod_antiaffinity: "true"
+
+      # override topology key for pod anti affinity
+      pod_antiaffinity_topology_key: "kubernetes.io/hostname"
+
+      # storage resize strategy, available options are: ebs, pvc, off
+      storage_resize_mode: pvc
+
+      pod_environment_configmap: "operators-system/zalando-postgres-pod-config"
+
+    # configure interaction with non-Kubernetes objects from AWS or GCP
+    configAwsOrGcp:
+      # Additional Secret (aws or gcp credentials) to mount in the pod
+      # additional_secret_mount: "some-secret-name"
+
+      # Path to mount the above Secret in the filesystem of the container(s)
+      # additional_secret_mount_path: "/some/dir"
+
+      # AWS region used to store ESB volumes
+      aws_region: eu-central-1
+
+      # AWS IAM role to supply in the iam.amazonaws.com/role annotation of Postgres pods
+      # kube_iam_role: ""
+      # S3 bucket to use for shipping postgres daily logs
+      # log_s3_bucket: ""
+      # S3 bucket to use for shipping WAL segments with WAL-E
+      # wal_s3_bucket: ""
+      # GCS bucket to use for shipping WAL segments with WAL-E
+      # wal_gs_bucket: ""
+      # GCP credentials for setting the GOOGLE_APPLICATION_CREDNETIALS environment variable
+      # gcp_credentials: ""
+
+    # configure K8s cron job managed by the operator
+    configLogicalBackup:
+      # image for pods of the logical backup job (example runs pg_dumpall)
+      logical_backup_docker_image: "registry.opensource.zalan.do/acid/logical-backup:master-58"
+      # S3 Access Key ID
+      logical_backup_s3_access_key_id: ""
+      # S3 bucket to store backup results
+      logical_backup_s3_bucket: "my-bucket-url"
+      # S3 region of bucket
+      logical_backup_s3_region: ""
+      # S3 endpoint url when not using AWS
+      logical_backup_s3_endpoint: ""
+      # S3 Secret Access Key
+      logical_backup_s3_secret_access_key: ""
+      # S3 server side encryption
+      logical_backup_s3_sse: "AES256"
+      # backup schedule in the cron format
+      logical_backup_schedule: "30 00 * * *"

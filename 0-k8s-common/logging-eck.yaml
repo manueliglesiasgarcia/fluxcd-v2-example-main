@@ -1,0 +1,33 @@
+## See: https://github.com/elastic/cloud-on-k8s
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: eck-stack
+  namespace: logging-system
+spec:
+  interval: 5m
+  releaseName: eck-stack
+  chart:
+    spec:
+      chart: eck-stack
+      sourceRef:
+        kind: HelmRepository
+        name: test-harbor
+        namespace: flux-system
+      version: 7.12.0
+  values:
+    kibana:
+      ingress:
+        enabled: true
+        annotations:
+          kubernetes.io/ingress.class: "nginx"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+        hosts:
+          - host: kibana.test.com
+            paths: ["/"]
+        tls:
+          - secretName: kibana-eck-tls
+            hosts:
+              - kibana.test.com

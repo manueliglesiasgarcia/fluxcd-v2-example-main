@@ -1,0 +1,62 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: elasticsearch-curator
+  namespace: logging-system
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: elasticsearch-curator
+  chart:
+    spec:
+      chart: elasticsearch-curator
+      sourceRef:
+        kind: HelmRepository
+        name: lebenitza
+        namespace: flux-system
+      version: 3.0.1
+  values:
+    cronjob:
+      # At 01:00 every day
+      schedule: "0 1 * * *"
+      concurrencyPolicy: "Replace"
+      failedJobsHistoryLimit: "1"
+      successfulJobsHistoryLimit: "1"
+
+    rbac:
+      enabled: true
+
+    configMaps:
+      # Delete indices older than 7 days
+      action_file_yml: |-
+        ---
+        actions:
+          1:
+            action: delete_indices
+            description: "Clean up ES by deleting old indices"
+            options:
+              timeout_override:
+              continue_if_exception: false
+              disable_action: false
+              ignore_empty_list: true
+              allow_ilm_indices: true
+            filters:
+            - filtertype: pattern
+              kind: prefix
+              value: logstash-
+            - filtertype: age
+              source: name
+              direction: older
+              timestring: '%Y.%m.%d'
+              unit: days
+              unit_count: 14
+
+      # Having config_yaml WILL override the other config
+      config_yml: |-
+        ---
+        client:
+          hosts:
+            - eck-stack-elasticsearch-es-http
+          port: 9200

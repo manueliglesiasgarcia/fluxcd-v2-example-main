@@ -1,0 +1,124 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+  namespace: ingress-system
+  annotations:
+    flux.weave.works/locked: "true"
+spec:
+  interval: 5m
+  releaseName: ingress-nginx
+  chart:
+    spec:
+      chart: ingress-nginx
+      version: 3.23.0
+      sourceRef:
+        kind: HelmRepository
+        name: kubernetes-ingress
+        namespace: flux-system
+  values:
+    ## nginx configuration
+    ## Ref: https://github.com/kubernetes/ingress/blob/master/controllers/nginx/configuration.md
+    ##
+    controller:
+      # This will fix the issue of HPA not being able to read the metrics.
+      # Note that if you enable it for existing deployments, it won't work as the labels are immutable.
+      # We recommend setting this to true for new deployments.
+      useComponentLabel: true
+
+      # Will add custom configuration options to Nginx https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/
+      config:
+        hsts: "false"
+        large-client-header-buffers: 4 128k
+        proxy-body-size: 10m
+        client-body-buffer-size: 128k
+        http2-max-field-size: 128k
+
+      ## Name of the ingress class to route through this controller
+      ##
+      ingressClass: nginx
+
+      ## DaemonSet or Deployment
+      ##
+      kind: Deployment
+
+      ## Annotations to be added to the controller deployment
+      ##
+      deploymentAnnotations: {}
+
+      # The update strategy to apply to the Deployment or DaemonSet
+      ##
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 1
+        type: RollingUpdate
+
+      ## Affinity and anti-affinity
+      ## Ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+      ##
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - ingress-nginx
+                topologyKey: kubernetes.io/hostname
+
+      replicaCount: 3
+
+      minAvailable: 1
+
+      resources:
+        limits:
+          cpu: 300m
+          memory: 512Mi
+        requests:
+          cpu: 300m
+          memory: 512Mi
+
+      autoscaling:
+        enabled: true
+        minReplicas: 3
+        maxReplicas: 10
+        targetCPUUtilizationPercentage: 60
+        targetMemoryUtilizationPercentage: 60
+
+      service:
+        loadBalancerIP: "10.x.x.x"
+        type: LoadBalancer
+
+      admissionWebhooks:
+        enabled: true
+
+      metrics:
+        enabled: true
+
+        serviceMonitor:
+          enabled: true
+          
+        prometheusRule:
+          enabled: true
+          rules:
+            # # These are just examples rules, please adapt them to your needs
+            - alert: TooMany500s
+              expr: 100 * ( sum( nginx_ingress_controller_requests{status=~"5.+"} ) / sum(nginx_ingress_controller_requests) ) > 5
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                description: Too many 5XXs
+                summary: More than 5% of the all requests did return 5XX, this require your attention
+            - alert: TooMany400s
+              expr: 100 * ( sum( nginx_ingress_controller_requests{status=~"4.+"} ) / sum(nginx_ingress_controller_requests) ) > 5
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                description: Too many 4XXs
+                summary: More than 5% of the all requests did return 4XX, this require your attention
